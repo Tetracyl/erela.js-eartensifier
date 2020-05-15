@@ -198,9 +198,6 @@ export class Player {
         if (isNaN(volume)) {
             throw new RangeError("Player#setVolume(volume: number) Volume must be a number");
         }
-        if (volume < 0 || volume > 1000) {
-            throw new RangeError("Player#setVolume(volume: number) Volume can not be lower than 0 or higher than 1000, must be or be between 0 and 1000.");
-        }
         this.volume = volume;
         this.node.send({
             op: "volume",
