@@ -13,7 +13,7 @@ export class Utils {
      * @returns {string} - The formatted duration.
      */
     public static formatTime(milliseconds: number, minimal: boolean = false): string {
-        if (!milliseconds || isNaN(milliseconds) || milliseconds <= 0) {
+        if (!milliseconds || isNaN(milliseconds) || milliseconds < 0) {
             throw new RangeError("Utils#formatTime(milliseconds: number) Milliseconds must be a number greater than 0");
         }
 
