@@ -1,7 +1,7 @@
 /* eslint-disable no-async-promise-executor, @typescript-eslint/no-explicit-any */
 import { LoadType, buildTrack, Plugin, Structure } from "./Utils";
 import { Node, NodeOptions } from "./Node";
-import { Player, Track } from "./Player";
+import { Player, Track, PlayerOptions } from "./Player";
 import { EventEmitter } from "events";
 import Collection from "@discordjs/collection";
 import Axios from "axios";
@@ -65,6 +65,79 @@ export interface SearchResult {
 
 const template = JSON.stringify(["event", "guildId", "op", "sessionId"]);
 
+export interface Manager {
+    /**
+     * Emitted when a Node connects.
+     * @event Manager#nodeConnect
+     */
+    on(event: "nodeConnect", listener: (node: Node) => void): this;
+    /**
+     * Emitted when a Node reconnects.
+     * @event Manager#nodeReconnect
+     */
+    on(event: "nodeReconnect", listener: (node: Node) => void): this;
+    /**
+     * Emitted when a Node disconnects.
+     * @event Manager#nodeDisconnect
+     */
+    on(event: "nodeDisconnect", listener: (node: Node, reason: { code: number; reason: string }) => void): this;
+    /**
+     * Emitted when a Node has an error.
+     * @event Manager#nodeError
+     */
+    on(event: "nodeError", listener: (node: Node, error: Error) => void): this;
+    /**
+     * Emitted whenever any Lavalink event is received.
+     * @event Manager#nodeRaw
+     */
+    on(event: "nodeRaw", listener: (payload: any) => void): this;
+    /**
+     * Emitted when a player is created.
+     * @event Manager#playerCreate
+     */
+    on(event: "playerCreate", listener: (player: Player) => void): this;
+    /**
+     * Emitted when a player is destroyed.
+     * @event Manager#playerDestroy
+     */
+    on(event: "playerDestroy", listener: (player: Player) => void): this;
+    /**
+     * Emitted when a player queue ends.
+     * @event Manager#queueEnd
+     */
+    on(event: "queueEnd", listener: (player: Player) => void): this;
+    /**
+     * Emitted when a player is moved to a new voice channel.
+     * @event Manager#playerMove
+     */
+    on(event: "playerMove", listener: (player: Player, oldChannel: any, newChannel: string) => void): this;
+    /**
+     * Emitted when a track starts.
+     * @event Manager#trackStart
+     */
+    on(event: "trackStart", listener: (player: Player, track: Track, payload: any) => void): this;
+    /**
+     * Emitted when a track ends.
+     * @event Manager#trackEnd
+     */
+    on(event: "trackEnd", listener: (player: Player, track: Track, payload: any) => void): this;
+    /**
+     * Emitted when a track gets stuck during playback.
+     * @event Manager#trackStuck
+     */
+    on(event: "trackStuck", listener: (player: Player, track: Track, payload: any) => void): this;
+    /**
+     * Emitted when a track has an error during playback.
+     * @event Manager#trackError
+     */
+    on(event: "trackError", listener: (player: Player, track: Track, payload: any) => void): this;
+    /**
+     * Emitted when a voice connect is closed.
+     * @event Manager#socketClosed
+     */
+    on(event: "socketClosed", listener: (player: Player, payload: any) => void): this;
+}
+
 /**
  * The Manager class.
  * @noInheritDoc
@@ -99,12 +172,12 @@ export class Manager extends EventEmitter {
             ...options,
         };
 
-        this.options.plugins.forEach((plugin) => plugin.load(this));
+        for (const plugin of this.options.plugins) plugin.load(this);
 
-        this.options.nodes.forEach((node: NodeOptions) => {
-            const identifier = node.identifier || node.host;
+        for (const node of this.options.nodes) {
+            const identifier = node.identifier || `${node.host}:${node.port}`;
             this.nodes.set(identifier, new (Structure.get("Node"))(this, node));
-        });
+        }
     }
 
     /**
@@ -117,7 +190,7 @@ export class Manager extends EventEmitter {
             throw new Error("\"clientId\" is not set. Pass it in Manager#init() or as a option in the constructor.");
         }
 
-        this.nodes.forEach((node: Node) => node.connect());
+        for (const node of this.nodes.values()) node.connect();
         Structure.get("Player").init(this);
         return this;
     }
@@ -130,11 +203,12 @@ export class Manager extends EventEmitter {
      */
     public search(query: string | Query, requester: any): Promise<SearchResult> {
         return new Promise(async (resolve, reject) => {
-            const node: Node = this.nodes.values().next().value;
+            const node: Node = this.nodes
+                .filter((node) => node.connected)
+                .sort((a, b) => b.calls - a.calls)
+                .first();
 
-            if (!node) {
-                throw new Error("Manager#search() No available nodes.");
-            }
+            if (!node) throw new Error("Manager#search() No available nodes.");
 
             const source = { soundcloud: "sc" }[(query as Query).source] || "yt";
             let search = (query as Query).query || query as string;
@@ -180,6 +254,18 @@ export class Manager extends EventEmitter {
 
             return resolve(result);
         });
+    }
+
+    /**
+     * Create method for an easier option to creating players.
+     * @param {PlayerOptions} options The options to pass.
+     */
+    public create(options: PlayerOptions): Player {
+        if (this.players.has(options.guild.id || options.guild)) {
+            return this.players.get(options.guild.id || options.guild);
+        } else {
+            return new (Structure.get("Player"))(options)
+        }
     }
 
     /**

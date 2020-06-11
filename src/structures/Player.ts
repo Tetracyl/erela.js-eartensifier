@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/camelcase, @typescript-eslint/no-explicit-any */
 import { Structure, State } from "./Utils";
-import { Manager } from "./Manager";
+import { Manager, Query, SearchResult } from "./Manager";
 import { Queue } from "./Queue";
 import { Node } from "./Node";
 
@@ -62,10 +62,10 @@ export interface PlayOptions {
 
 /** The EqualizerBand interface. */
 export interface EqualizerBand {
-    /** The gain for the band. */
-    gain: number;
-    /** The band. */
+    /** The band number being 0 to 14. */
     band: number;
+    /** The gain amount being -0.25 to 1.00, 0.25 being double. */
+    gain: number;
 }
 
 /** The Player class. */
@@ -73,7 +73,9 @@ export class Player {
     /** The Manager instance. */
     public static manager: Manager;
     /** The Queue for the Player. */
-    public readonly queue = new (Structure.get("Queue"))() as Queue;
+    public readonly queue = new (Structure.get("Queue"))(this) as Queue;
+    /** The current track for the Player. */
+    public current?: Track;
     /** Whether the queue repeats the track. */
     public trackRepeat = false;
     /** Whether the queue repeats the queue. */
@@ -110,10 +112,8 @@ export class Player {
      * @param {PlayerOptions} options The options to pass.
      */
     constructor(public options: PlayerOptions) {
-        this.player = Structure.get("Player");
-        if (this.player.manager == null) {
-            throw new RangeError("Manager has not been initiated.");
-        }
+        if (!this.player) this.player = Structure.get("Player");
+        if (!this.player.manager) throw new RangeError("Manager has not been initiated.");
 
         if (this.player.manager.players.has(options.guild.id || options.guild)) {
             return this.player.manager.players.get(options.guild.id || options.guild);
@@ -125,9 +125,28 @@ export class Player {
         this.textChannel = options.textChannel;
 
         const node = this.player.manager.nodes.get(options.node);
-        this.node =  node || this.player.manager.nodes.values().next().value;
+        this.node = node || this.player.manager.nodes
+            .filter((node) => node.connected)
+            .sort((a, b) => {
+                const aload = a.stats.cpu ? a.stats.cpu.systemLoad / a.stats.cpu.cores * 100 : 0;
+                const bload = b.stats.cpu ? b.stats.cpu.systemLoad / b.stats.cpu.cores * 100 : 0;
+                return aload - bload;
+            })
+            .first();
+
+        if (!this.node) throw new RangeError("Player() No available nodes.")
 
         this.player.manager.players.set(options.guild.id || options.guild, this);
+    }
+
+    /**
+     * Same as Manager#search() but a shortcut on the player itself.
+     * @param {(string|Query)} query The query to search against.
+     * @param {any} requester The user who requested the tracks.
+     * @returns {Promise<SearchResult>} The search result.
+     */
+    public search(query: string | Query, requester: any): Promise<SearchResult> {
+        return this.player.manager.search(query, requester);
     }
 
     /**
@@ -135,12 +154,12 @@ export class Player {
      * @param {EqualizerBand[]} bands The bands to set.
      */
     public setEQ(...bands: EqualizerBand[]): this {
-        bands.forEach(({ band, gain }) => this.bands[band] = gain)
+        for (const { band, gain } of bands) this.bands[band] = gain;
 
         this.node.send({
             op: "equalizer",
             guildId: this.guild.id || this.guild,
-            bands: this.bands,
+            bands: this.bands.map(( gain, band) => ({ band, gain })),
         });
 
         return this;
@@ -148,7 +167,8 @@ export class Player {
 
     /** Clears the equalizer. */
     public clearEQ(): this {
-        return this.setEQ(...new Array(15).map((_, i) => ({ band: i, gain: 0.0 })))
+        this.bands = new Array(15).fill(0.0);
+        return this.setEQ()
     }
 
     /** Connect to the voice channel. */
@@ -175,6 +195,7 @@ export class Player {
         if (!this.voiceChannel) return;
         this.state = State.DISCONNECTING;
 
+        this.pause(true);
         this.player.manager.options.send(this.guild.id || this.guild, {
             op: 4,
             d: {
@@ -186,12 +207,6 @@ export class Player {
         });
 
         this.voiceChannel = null;
-        this.textChannel = null;
-        this.trackRepeat = false;
-        this.queueRepeat = false;
-        this.playing = false;
-        this.position = 0;
-
         this.state = State.DISCONNECTED;
         return this;
     }
@@ -215,7 +230,7 @@ export class Player {
      * @param {*} channel The channel to set.
      */
     public setVoiceChannel(channel: any): this {
-        channel = this.voiceChannel.id ? channel : channel.id;
+        channel = this.options.voiceChannel.id ? channel : channel.id;
         this.voiceChannel = channel;
         this.connect();
         return this;
@@ -236,12 +251,12 @@ export class Player {
      * @param {PlayOptions} [options={}] The options to use.
      */
     public play(options: PlayOptions = {}): this {
-        if (!this.queue[0]) throw new RangeError("Player#play() No tracks in the queue.");
+        if (!this.current) throw new RangeError("Player#play() No current track.");
 
         const finalOptions = {
             op: "play",
             guildId: this.guild.id || this.guild,
-            track: this.queue[0].track,
+            track: this.current.track,
             ...options,
         };
 
@@ -259,6 +274,7 @@ export class Player {
      */
     public setVolume(volume: number): this {
         if (isNaN(volume)) throw new RangeError("Player#setVolume() Volume must be a number.");
+        this.volume = Math.max(Math.min(volume, 1000), 0);
 
         this.node.send({
             op: "volume",
@@ -338,9 +354,9 @@ export class Player {
      * @param {boolean} pause Whether to pause the current track.
      */
     public seek(position: number): this {
-        if (!this.queue[0]) return;
+        if (!this.current) return;
         if (isNaN(position)) { throw new RangeError("Player#seek() Position must be a number."); }
-        if (position < 0 || position > this.queue[0].length) position = Math.max(Math.min(position, this.queue[0].length), 0);
+        if (position < 0 || position > this.current.length) position = Math.max(Math.min(position, this.current.length), 0);
 
         this.position = position;
         this.node.send({

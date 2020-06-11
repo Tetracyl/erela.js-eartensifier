@@ -80,7 +80,7 @@ declare module 'erela.js/structures/Utils' {
 declare module 'erela.js/structures/Manager' {
     import { LoadType, Plugin } from "erela.js/structures/Utils";
     import { Node, NodeOptions } from "erela.js/structures/Node";
-    import { Player, Track } from "erela.js/structures/Player";
+    import { Player, Track, PlayerOptions } from "erela.js/structures/Player";
     import { EventEmitter } from "events";
     import Collection from "@discordjs/collection";
     /** The ManagerOptions interface. */
@@ -167,16 +167,96 @@ declare module 'erela.js/structures/Manager' {
                 */
             search(query: string | Query, requester: any): Promise<SearchResult>;
             /**
+                * Create method for an easier option to creating players.
+                * @param {PlayerOptions} options The options to pass.
+                */
+            create(options: PlayerOptions): Player;
+            /**
                 * Sends voice data to the Lavalink server.
                 * @param {*} data The data to send.
                 */
             updateVoiceState(data: any): void;
     }
+    export interface Manager {
+            /**
+                * Emitted when a Node connects.
+                * @event Manager#nodeConnect
+                */
+            on(event: "nodeConnect", listener: (node: Node) => void): this;
+            /**
+                * Emitted when a Node reconnects.
+                * @event Manager#nodeReconnect
+                */
+            on(event: "nodeReconnect", listener: (node: Node) => void): this;
+            /**
+                * Emitted when a Node disconnects.
+                * @event Manager#nodeDisconnect
+                */
+            on(event: "nodeDisconnect", listener: (node: Node, reason: {
+                    code: number;
+                    reason: string;
+            }) => void): this;
+            /**
+                * Emitted when a Node has an error.
+                * @event Manager#nodeError
+                */
+            on(event: "nodeError", listener: (node: Node, error: Error) => void): this;
+            /**
+                * Emitted whenever any Lavalink event is received.
+                * @event Manager#nodeRaw
+                */
+            on(event: "nodeRaw", listener: (payload: any) => void): this;
+            /**
+                * Emitted when a player is created.
+                * @event Manager#playerCreate
+                */
+            on(event: "playerCreate", listener: (player: Player) => void): this;
+            /**
+                * Emitted when a player is destroyed.
+                * @event Manager#playerDestroy
+                */
+            on(event: "playerDestroy", listener: (player: Player) => void): this;
+            /**
+                * Emitted when a player queue ends.
+                * @event Manager#queueEnd
+                */
+            on(event: "queueEnd", listener: (player: Player) => void): this;
+            /**
+                * Emitted when a player is moved to a new voice channel.
+                * @event Manager#playerMove
+                */
+            on(event: "playerMove", listener: (player: Player, oldChannel: any, newChannel: string) => void): this;
+            /**
+                * Emitted when a track starts.
+                * @event Manager#trackStart
+                */
+            on(event: "trackStart", listener: (player: Player, track: Track, payload: any) => void): this;
+            /**
+                * Emitted when a track ends.
+                * @event Manager#trackEnd
+                */
+            on(event: "trackEnd", listener: (player: Player, track: Track, payload: any) => void): this;
+            /**
+                * Emitted when a track gets stuck during playback.
+                * @event Manager#trackStuck
+                */
+            on(event: "trackStuck", listener: (player: Player, track: Track, payload: any) => void): this;
+            /**
+                * Emitted when a track has an error during playback.
+                * @event Manager#trackError
+                */
+            on(event: "trackError", listener: (player: Player, track: Track, payload: any) => void): this;
+            /**
+                * Emitted when a voice connect is closed.
+                * @event Manager#socketClosed
+                */
+            on(event: "socketClosed", listener: (player: Player, payload: any) => void): this;
+    }
 }
 
 declare module 'erela.js/structures/Player' {
     import { State } from "erela.js/structures/Utils";
-    import { Manager } from "erela.js/structures/Manager";
+    import { Manager, Query, SearchResult } from "erela.js/structures/Manager";
     import { Queue } from "erela.js/structures/Queue";
     import { Node } from "erela.js/structures/Node";
     /** The PlayerOptions interface. */
@@ -234,10 +314,10 @@ declare module 'erela.js/structures/Player' {
     }
     /** The EqualizerBand interface. */
     export interface EqualizerBand {
-            /** The gain for the band. */
-            gain: number;
-            /** The band. */
+            /** The band number being 0 to 14. */
             band: number;
+            /** The gain amount being -0.25 to 1.00, 0.25 being double. */
+            gain: number;
     }
     /** The Player class. */
     export class Player {
@@ -246,6 +326,8 @@ declare module 'erela.js/structures/Player' {
             static manager: Manager;
             /** The Queue for the Player. */
             readonly queue: Queue;
+            /** The current track for the Player. */
+            current?: Track;
             /** Whether the queue repeats the track. */
             trackRepeat: boolean;
             /** Whether the queue repeats the queue. */
@@ -277,6 +359,13 @@ declare module 'erela.js/structures/Player' {
                 * @param {PlayerOptions} options The options to pass.
                 */
             constructor(options: PlayerOptions);
+            /**
+                * Same as Manager#search() but a shortcut on the player itself.
+                * @param {(string|Query)} query The query to search against.
+                * @param {any} requester The user who requested the tracks.
+                * @returns {Promise<SearchResult>} The search result.
+                */
+            search(query: string | Query, requester: any): Promise<SearchResult>;
             /**
                 * Sets the players equalizer band. Passing nothing will clear it.
                 * @param {EqualizerBand[]} bands The bands to set.
@@ -336,16 +425,17 @@ declare module 'erela.js/structures/Player' {
 }
 
 declare module 'erela.js/structures/Queue' {
-    import { Track } from "erela.js/structures/Player";
+    import { Track, Player } from "erela.js/structures/Player";
     /**
         * The Queue class.
         * @noInheritDoc
         */
     export class Queue extends Array<Track> {
+            constructor(player: Player);
             /**
                 * Adds a track to the queue.
                 * @param {(Track|Track[])} track The track or tracks to add.
-                * @param {number} [offset=0] The offset to add the track at.
+                * @param {number} [offset=null] The offset to add the track at.
                 */
             add(track: Track | Track[], offset?: number): void;
             /**
@@ -355,11 +445,11 @@ declare module 'erela.js/structures/Queue' {
                 */
             removeFrom(start: number, end: number): Track[];
             /**
-                * Removes a track to the queue. Defaults to the first track.
-                * @param {(Track|number)} [track=0] The track to remove.
+                * Removes a track from the queue. Defaults to the first track.
+                * @param {number} [position=0] The track index to remove.
                 * @returns {(Track|null)} The track that was removed, or null if the track does not exist.
                 */
-            remove(track?: Track | number): Track | null;
+            remove(position?: number): Track | null;
             /** Clears the queue. */
             clear(): void;
             /** Shuffles the queue. */
@@ -455,8 +545,8 @@ declare module 'erela.js/structures/Node' {
             send(data: any): Promise<boolean>;
             protected open(): void;
             protected close(code: number, reason: string): void;
-            protected message(d: Buffer | string): void;
             protected error(error: Error): void;
+            protected message(d: Buffer | string): void;
             protected handleEvent(payload: any): void;
             protected trackEnd(player: Player, track: Track, payload: any): void;
             protected trackStart(player: Player, track: Track, payload: any): void;

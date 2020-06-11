@@ -66,7 +66,7 @@ export class Node {
     /** The stats for the node. */
     public stats: NodeStats;
     private reconnectTimeout?: NodeJS.Timeout;
-    private reconnectAttempts = 0;
+    private reconnectAttempts = 1;
 
     /** Returns if connected to the Node. */
     public get connected(): boolean {
@@ -125,8 +125,7 @@ export class Node {
         this.reconnectTimeout = setTimeout(() => {
             if (this.reconnectAttempts >= (this.options.retryAmount || 5)) {
                 this.manager.emit("nodeError", this, new Error(`Unable to connect after ${this.options.retryAmount || 5} attempts.`));
-                this.destroy();
-                return clearTimeout(this.reconnectTimeout);
+                return this.destroy();
             }
             this.socket.removeAllListeners();
             this.socket = null;
@@ -142,6 +141,8 @@ export class Node {
         this.socket.close(1000, "destroy");
         this.socket.removeAllListeners();
         this.socket = null;
+        this.reconnectAttempts = 1;
+        return clearTimeout(this.reconnectTimeout);
     }
 
     /**
@@ -169,13 +170,19 @@ export class Node {
         if (code !== 1000 || reason !== "destroy") this.reconnect();
     }
 
+    protected error(error: Error): void {
+        if (!error) return;
+        this.manager.emit("nodeError", this, error);
+    }
+
     protected message(d: Buffer|string): void {
         if (Array.isArray(d)) d = Buffer.concat(d);
         else if (d instanceof ArrayBuffer) d = Buffer.from(d);
 
         const payload = JSON.parse(d.toString());
         if (!payload.op) return;
-
+        this.manager.emit("raw", payload)
+        
         switch (payload.op) {
             case "stats":
                 delete payload.op;
@@ -194,17 +201,11 @@ export class Node {
         }
     }
 
-    protected error(error: Error): void {
-        if (!error) return;
-        this.manager.emit("nodeError", this, error);
-        this.reconnect();
-    }
-
     protected handleEvent(payload: any): void {
         if (!payload.guildId) { return; }
         const player = this.manager.players.get(payload.guildId);
         if (!player) return;
-        const track = player.queue[0];
+        const track = player.current;
         switch (payload.type) {
             case "TrackStartEvent":
                 this.trackStart(player, track, payload);
@@ -228,21 +229,22 @@ export class Node {
 
     protected trackEnd(player: Player, track: Track, payload: any): void {
         if (track && player.trackRepeat) {
-            this.manager.emit("trackEnd", player, track);
+            this.manager.emit("trackEnd", player, track, payload);
             if (this.manager.options.autoPlay) player.play();
         } else if (track && player.queueRepeat) {
-            player.queue.add(player.queue.shift());
-            this.manager.emit("trackEnd", player, track);
+            player.current = player.queue.shift()
+            player.queue.add(track);
+            this.manager.emit("trackEnd", player, track, payload);
             if (this.manager.options.autoPlay) player.play();
-        } else if (player.queue.length === 1) {
-            player.queue.shift();
+        } else if (!player.queue.length) {
+            player.current = null;
             player.playing = false;
             if (["REPLACED", "FINISHED", "STOPPED"].includes(payload.reason)) {
                 this.manager.emit("queueEnd", player);
             }
-        } else if (player.queue.length > 0) {
-            player.queue.shift();
-            this.manager.emit("trackEnd", player, track);
+        } else if (player.queue.length) {
+            player.current = player.queue.shift();
+            this.manager.emit("trackEnd", player, track, payload);
             if (this.manager.options.autoPlay) player.play();
         }
     }
