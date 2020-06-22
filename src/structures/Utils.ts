@@ -27,23 +27,36 @@ const sizes = [
     "maxresdefault",
 ];
 
+export interface TrackData {
+    track: string;
+    info: {
+        title: string;
+        identifier: string;
+        author: string;
+        length: number;
+        isSeekable: boolean;
+        isStream: boolean;
+        uri: string;
+    };
+}
+
 /** @hidden */
-export function buildTrack(data: any, requester: any): Track {
+export function buildTrack(data: TrackData, requester: any): Track | null {
     try {
-        const track = {
+        const track: Track = {
             track: data.track,
             title: data.info.title,
             identifier: data.info.identifier,
             author: data.info.author,
-            length: data.info.length,
+            duration: data.info.length,
             isSeekable: data.info.isSeekable,
             isStream: data.info.isStream,
             uri: data.info.uri,
-            thumbnail: `https://img.youtube.com/vi/${this.identifier}/default.jpg`,
+            thumbnail: `https://img.youtube.com/vi/${data.info.identifier}/default.jpg`,
             displayThumbnail(size): string {
                 const finalSize = sizes.find((s) => s === size) || "default";
                 return this.uri.includes("youtube")
-                    ? `https://img.youtube.com/vi/${this.identifier}/${finalSize}.jpg`
+                    ? `https://img.youtube.com/vi/${data.info.identifier}/${finalSize}.jpg`
                     : "";
             },
             requester,

@@ -127,7 +127,7 @@ declare module 'erela.js/structures/Manager' {
                     /** The tracks in the playlist. */
                     tracks: Track[];
                     /** The duration of the playlist. */
-                    length: number;
+                    duration: number;
             };
             /** The exception when searching if one. */
             exception?: {
@@ -137,47 +137,17 @@ declare module 'erela.js/structures/Manager' {
                     severity: string;
             };
     }
-    /**
-        * The Manager class.
-        * @noInheritDoc
-        */
-    export class Manager extends EventEmitter {
-            /** The map of players. */
-            readonly players: Collection<string, Player>;
-            /** The map of nodes. */
-            readonly nodes: Collection<string, Node>;
-            /** The options that were set. */
-            readonly options: ManagerOptions;
-            protected readonly voiceStates: Map<string, any>;
-            /**
-                * Creates the Manager class.
-                * @param {ManagerOptions} options The options to use.
-                */
-            constructor(options: ManagerOptions);
-            /**
-                * Initiates the manager (with a client ID if none provided in ManagerOptions).
-                * @param {string} clientId The client ID to use.
-                */
-            init(clientId?: string): this;
-            /**
-                * Searches YouTube with the query.
-                * @param {(string|Query)} query The query to search against.
-                * @param {any} requester The user who requested the tracks.
-                * @returns {Promise<SearchResult>} The search result.
-                */
-            search(query: string | Query, requester: any): Promise<SearchResult>;
-            /**
-                * Create method for an easier option to creating players.
-                * @param {PlayerOptions} options The options to pass.
-                */
-            create(options: PlayerOptions): Player;
-            /**
-                * Sends voice data to the Lavalink server.
-                * @param {*} data The data to send.
-                */
-            updateVoiceState(data: any): void;
-    }
     export interface Manager {
+            /**
+                * Emitted when a Node is created.
+                * @event Manager#nodeCreate
+                */
+            on(event: "nodeCreate", listener: (node: Node) => void): this;
+            /**
+                * Emitted when a Node is destroyed.
+                * @event Manager#nodeDestroy
+                */
+            on(event: "nodeDestroy", listener: (node: Node) => void): this;
             /**
                 * Emitted when a Node connects.
                 * @event Manager#nodeConnect
@@ -252,6 +222,46 @@ declare module 'erela.js/structures/Manager' {
                 */
             on(event: "socketClosed", listener: (player: Player, payload: any) => void): this;
     }
+    /**
+        * The Manager class.
+        * @noInheritDoc
+        */
+    export class Manager extends EventEmitter {
+            /** The map of players. */
+            readonly players: Collection<string, Player>;
+            /** The map of nodes. */
+            readonly nodes: Collection<string, Node>;
+            /** The options that were set. */
+            readonly options: ManagerOptions;
+            protected readonly voiceStates: Map<string, any>;
+            /**
+                * Creates the Manager class.
+                * @param {ManagerOptions} options The options to use.
+                */
+            constructor(options: ManagerOptions);
+            /**
+                * Initiates the manager (with a client ID if none provided in ManagerOptions).
+                * @param {string} clientId The client ID to use.
+                */
+            init(clientId?: string): this;
+            /**
+                * Searches YouTube with the query.
+                * @param {(string|Query)} query The query to search against.
+                * @param {any} requester The user who requested the tracks.
+                * @returns {Promise<SearchResult>} The search result.
+                */
+            search(query: string | Query, requester: any): Promise<SearchResult>;
+            /**
+                * Create method for an easier option to creating players.
+                * @param {PlayerOptions} options The options to pass.
+                */
+            create(options: PlayerOptions): Player;
+            /**
+                * Sends voice data to the Lavalink server.
+                * @param {*} data The data to send.
+                */
+            updateVoiceState(data: any): void;
+    }
 }
 
 declare module 'erela.js/structures/Player' {
@@ -286,8 +296,8 @@ declare module 'erela.js/structures/Player' {
             readonly identifier: string;
             /** The author of the track. */
             readonly author: string;
-            /** The length of the track. */
-            readonly length: number;
+            /** The duration of the track. */
+            readonly duration: number;
             /** If the track is seekable. */
             readonly isSeekable: boolean;
             /** If the track is a stream.. */
@@ -431,6 +441,11 @@ declare module 'erela.js/structures/Queue' {
         * @noInheritDoc
         */
     export class Queue extends Array<Track> {
+            /**
+                * Returns the total duration of the queue.
+                * @returns {number} - The duration of the queue.
+                */
+            get duration(): number;
             constructor(player: Player);
             /**
                 * Adds a track to the queue.

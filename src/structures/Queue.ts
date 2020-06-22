@@ -5,7 +5,7 @@ const template = [
     "title",
     "identifer",
     "author",
-    "length",
+    "duration",
     "isSeekable",
     "isStream",
     "uri",
@@ -18,6 +18,12 @@ const template = [
  * @noInheritDoc
  */
 export class Queue extends Array<Track> {
+    /** Returns the total duration of the queue including the current track. */
+    public get duration(): number {
+        const current = (this.player.current || {}).duration || 0;
+        return this.map((track: Track) => track.duration).reduce((acc: number, cur: number) => acc + cur, current);
+    }
+
     public constructor(private player: Player) {
         super();
     }
@@ -27,7 +33,7 @@ export class Queue extends Array<Track> {
      * @param {(Track|Track[])} track The track or tracks to add.
      * @param {number} [offset=null] The offset to add the track at.
      */
-    public add(track: Track | Track[], offset: number = null): void {
+    public add(track: Track | Track[], offset?: number): void {
         if (!(Array.isArray(track) || !template.every((v) => Object.keys(track).includes(v)))) {
             throw new RangeError("Queue#add() Track must be a \"Track\" or \"Track[]\".");
         }
@@ -41,7 +47,7 @@ export class Queue extends Array<Track> {
             }
         }
 
-        if (offset !== null) {
+        if (typeof offset !== 'undefined' && typeof offset === 'number') {
             if (isNaN(offset)) {
                 throw new RangeError("Queue#add() Offset must be a number.");
             }
@@ -51,7 +57,7 @@ export class Queue extends Array<Track> {
             }
         }
 
-        if (offset === null) {
+        if (typeof offset === 'undefined' && typeof offset !== 'number') {
             if (track instanceof Array) this.push(...track); else this.push(track);
         } else {
             if (track instanceof Array)  this.splice(offset, 0, ...track); else this.splice(offset, 0, track);
