@@ -166,6 +166,16 @@ export class Player {
         return this;
     }
 
+    public setFilter(op: String, body = {}): this {
+        this.node.send({
+            op: op,
+            guildId: this.guild.id || this.guild,
+            ...body,
+        })
+
+        return this;
+    }
+
     /** Clears the equalizer. */
     public clearEQ(): this {
         this.bands = new Array(15).fill(0.0);
